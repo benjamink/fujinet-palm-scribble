@@ -1,8 +1,9 @@
 [Unit]
-Description=Scribble server (Docker container)
+Description=Scribble server (container)
+# Works with Docker or with podman's docker shim: docker.service is wanted if it
+# exists and ignored if not (e.g. podman hosts have no docker.service).
 After=docker.service network-online.target
-Wants=network-online.target
-Requires=docker.service
+Wants=docker.service network-online.target
 
 [Service]
 Type=simple

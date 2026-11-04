@@ -16,6 +16,12 @@ a public address, or clients could spoof their IP. The nginx config likewise
 
        docker build -t scribble:latest server/
 
+   Podman hosts (`docker` is a podman shim, no `docker.service`): the unit
+   works unchanged, but image names must be fully qualified. Either pull
+   `docker.io/<user>/<image>:<tag>` and use that name in `ExecStart`, or add
+   `unqualified-search-registries = ["docker.io"]` to
+   `/etc/containers/registries.conf`.
+
 2. Create the data directory, owned by the container user (UID/GID 10001):
 
        sudo install -d -o 10001 -g 10001 -m 750 /var/lib/scribble
