@@ -1,0 +1,135 @@
+#include "scribble_rsc.h"
+
+FORM ID SetupForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Scribble Setup"
+
+    LABEL "Server:" ID SetupServerLabel AT (4 18) FONT 0
+    FIELD ID SetupServerField AT (4 30 152 24)
+        UNDERLINED EDITABLE MULTIPLELINES MAXCHARS 79 FONT 0
+
+    LABEL "Username:" ID SetupUserLabel AT (4 60) FONT 0
+    FIELD ID SetupUserField AT (54 60 102 12)
+        UNDERLINED EDITABLE SINGLELINE MAXCHARS 32 FONT 0
+
+    LABEL "Password:" ID SetupPassLabel AT (4 76) FONT 0
+    FIELD ID SetupPassField AT (54 76 102 12)
+        UNDERLINED EDITABLE SINGLELINE MAXCHARS 63 FONT 0
+
+    LABEL "The password shows as you type." ID SetupNoteLabel AT (4 92) FONT 0
+    LABEL "It is never saved." ID SetupNote2Label AT (4 103) FONT 0
+
+    /* Status ("Logging in...", "Logged in as ...") is drawn at y=120 in C. */
+
+    GRAFFITISTATEINDICATOR AT (148 148)
+
+    BUTTON "Login"   ID SetupLoginButton  AT (4  142 40 14) FONT 0
+    BUTTON "Log out" ID SetupLogoutButton AT (48 142 44 14) FONT 0
+    BUTTON "Inbox"   ID SetupInboxButton  AT (96 142 40 14) FONT 0
+END
+
+FORM ID InboxForm AT (0 0 160 160)
+NOFRAME
+MENUID InboxMenu
+BEGIN
+    TITLE "Scribble"
+
+    /* "Inbox, page N" and "times UTC" are drawn at y=16 in C. */
+    LIST ID InboxList AT (4 28 152 88) FONT 0
+    /* Status ("Loading...", "No notes") is drawn at y=130 in C. */
+
+    BUTTON "<"       ID InboxPrevButton    AT (2   144 14 14) FONT 0
+    BUTTON ">"       ID InboxNextButton    AT (18  144 14 14) FONT 0
+    BUTTON "New"     ID InboxNewButton     AT (34  144 24 14) FONT 0
+    BUTTON "Refresh" ID InboxRefreshButton AT (60  144 36 14) FONT 0
+    BUTTON "Sent"    ID InboxModeButton    AT (98  144 29 14) FONT 0
+    BUTTON "Setup"   ID InboxSetupButton   AT (129 144 29 14) FONT 0
+END
+
+MENU ID InboxMenu
+BEGIN
+    PULLDOWN "Options"
+    BEGIN
+        MENUITEM "Setup"   ID MenuSetup  "S"
+        MENUITEM "Log out" ID MenuLogout "L"
+    END
+END
+
+FORM ID ViewerForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    /* No title: the header line (sender or recipients) is drawn at y=2,
+     * the 160x120 sketch at y=16..135 and the date at y=147 right of the
+     * last shown button, all in C. Reply is hidden in Sent mode. */
+    BUTTON "Delete" ID ViewerDeleteButton AT (2  145 36 14) FONT 0
+    BUTTON "Back"   ID ViewerBackButton   AT (40 145 30 14) FONT 0
+    BUTTON "Reply"  ID ViewerReplyButton  AT (72 145 30 14) FONT 0
+END
+
+FORM ID ComposeForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    /* No title: "To: ..." is drawn at y=2, the 160x120 drawing area at
+     * y=16..135 (border lines at y=15 and y=136), all in C. */
+    BUTTON "Clear" ID ComposeClearButton AT (1   145 30 14) FONT 0
+    BUTTON "Undo"  ID ComposeUndoButton  AT (33  145 30 14) FONT 0
+    BUTTON "To..." ID ComposeToButton    AT (65  145 30 14) FONT 0
+    BUTTON "Send"  ID ComposeSendButton  AT (97  145 30 14) FONT 0
+    BUTTON "Back"  ID ComposeBackButton  AT (129 145 30 14) FONT 0
+END
+
+FORM ID PickerForm AT (0 0 160 160)
+NOFRAME
+BEGIN
+    TITLE "Recipients"
+
+    LABEL "Find:" ID PickerPrefixLabel AT (2 17) FONT 0
+    FIELD ID PickerPrefixField AT (28 17 78 12)
+        UNDERLINED EDITABLE SINGLELINE MAXCHARS 16 FONT 0
+    BUTTON "Search" ID PickerSearchButton AT (112 16 44 12) FONT 0
+
+    LIST ID PickerList AT (4 31 152 88) FONT 0
+    /* "Selected: n/10" and the page / "Loading..." are drawn at y=122 in C. */
+
+    GRAFFITISTATEINDICATOR AT (150 122)
+
+    BUTTON "<"     ID PickerPrevButton  AT (2   145 14 14) FONT 0
+    BUTTON ">"     ID PickerNextButton  AT (18  145 14 14) FONT 0
+    BUTTON "Clear" ID PickerClearButton AT (36  145 32 14) FONT 0
+    BUTTON "Done"  ID PickerDoneButton  AT (122 145 34 14) FONT 0
+END
+
+ALERT ID GeneralAlert
+ERROR
+BEGIN
+    TITLE "Scribble"
+    MESSAGE "^1:\n^2^3"
+    BUTTONS "OK"
+END
+
+ALERT ID InfoAlert
+INFORMATION
+BEGIN
+    TITLE "Scribble"
+    MESSAGE "^1"
+    BUTTONS "OK"
+END
+
+ALERT ID ConfirmAlert
+CONFIRMATION
+BEGIN
+    TITLE "Scribble"
+    MESSAGE "Delete this note?"
+    BUTTONS "Delete" "Cancel"
+END
+
+ALERT ID DiscardAlert
+CONFIRMATION
+BEGIN
+    TITLE "Scribble"
+    MESSAGE "Discard this sketch?"
+    BUTTONS "Discard" "Keep editing"
+END
+
+VERSION ID 1 "0.1"

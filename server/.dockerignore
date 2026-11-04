@@ -1,0 +1,13 @@
+.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.db
+*.db-*
+*.egg-info
+.git
+tests
