@@ -18,12 +18,13 @@ ExecStart=/usr/bin/docker run --rm --name scribble -p 127.0.0.1:8000:8000 -v /va
 ExecStop=/usr/bin/docker stop scribble
 TimeoutStopSec=30
 
-# Hardening that does not interfere with talking to the docker socket.
+# Hardening that does not interfere with the container runtime. Do NOT add
+# ProtectControlGroups=yes: it makes /sys/fs/cgroup read-only, and podman/crun
+# then cannot create the container's cgroup ("create directory .../libpod-*.scope").
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectHome=yes
 ProtectKernelModules=yes
-ProtectControlGroups=yes
 RestrictRealtime=yes
 LockPersonality=yes
 
