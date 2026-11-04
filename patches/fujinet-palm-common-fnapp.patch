@@ -1,0 +1,164 @@
+diff --git a/palm/apps/common/fnapp.c b/palm/apps/common/fnapp.c
+index bbbb451..8bf44e8 100644
+--- a/palm/apps/common/fnapp.c
++++ b/palm/apps/common/fnapp.c
+@@ -62,22 +62,17 @@ Int16 fnapp_json_query(const char *devicespec, const char *path, char *buf, UInt
+ 
+ #define FNAPP_CHUNK 4096uL /* matches fujiconfig.c's InstallReadProc */
+ 
+-Err fnapp_http_get_all(const char *devicespec, MemHandle *outH, UInt32 *outLen, UInt32 cap)
++/* Shared tail of fnapp_http_get_all/fnapp_http_request: devicespec is
++ * already open (and, for POST, its body already queued). Reads the whole
++ * response into a new cap-byte handle, NUL-terminates it, and ALWAYS
++ * closes devicespec, on every path. Binary-safe: bytes are copied as-is,
++ * nothing scans for NUL or newline. */
++static Err fnapp_read_all_and_close(const char *devicespec, MemHandle *outH, UInt32 *outLen, UInt32 cap)
+ {
+-    FN_ERR rc;
+     MemHandle h;
+     UInt8 *p;
+     UInt32 total = 0;
+ 
+-    if (cap < 2) {
+-        return memErrInvalidParam;
+-    }
+-
+-    rc = network_open(devicespec, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE);
+-    if (rc != FN_ERR_OK) {
+-        return (Err)(1000 + rc); /* distinguishable nonzero Err; callers only test zero/nonzero */
+-    }
+-
+     h = MemHandleNew(cap);
+     if (!h) {
+         network_close(devicespec);
+@@ -116,6 +111,93 @@ Err fnapp_http_get_all(const char *devicespec, MemHandle *outH, UInt32 *outLen,
+     return errNone;
+ }
+ 
++Err fnapp_http_get_all(const char *devicespec, MemHandle *outH, UInt32 *outLen, UInt32 cap)
++{
++    FN_ERR rc;
++
++    if (cap < 2) {
++        return memErrInvalidParam;
++    }
++
++    rc = network_open(devicespec, OPEN_MODE_HTTP_GET, OPEN_TRANS_NONE);
++    if (rc != FN_ERR_OK) {
++        return (Err)(1000 + rc); /* distinguishable nonzero Err; callers only test zero/nonzero */
++    }
++
++    return fnapp_read_all_and_close(devicespec, outH, outLen, cap);
++}
++
++/* ------------------------------------------------------------------ */
++/* Authenticated request (GET / POST / DELETE)                        */
++/* ------------------------------------------------------------------ */
++
++/* Call order (see docs/scribble.md "FujiNet HTTP call order (Palm)"):
++ * open -> [SET_HEADERS mode, write header, BODY mode] -> [POST_SET_DATA
++ * mode, write body, BODY mode] -> read until EOF -> close. The firmware
++ * (fujinet-firmware lib/network-protocol/HTTP.cpp) only stores headers and
++ * POST data while in those channel modes; the request itself goes out on
++ * the first STATUS/READ in BODY mode, i.e. inside the read loop. So every
++ * header and the whole body must be written before the first read. */
++Err fnapp_http_request(const char *devicespec, UInt8 method, const char *authHeader,
++                       const UInt8 *body, UInt16 bodyLen,
++                       MemHandle *outH, UInt32 *outLen, UInt32 cap)
++{
++    FN_ERR rc;
++    UInt8 mode;
++
++    if (cap < 2) {
++        return memErrInvalidParam;
++    }
++
++    switch (method) {
++    case FNAPP_GET:
++        mode = authHeader ? OPEN_MODE_HTTP_GET_H : OPEN_MODE_HTTP_GET;
++        break;
++    case FNAPP_POST:
++        mode = OPEN_MODE_HTTP_POST; /* POST always accepts headers */
++        break;
++    case FNAPP_DELETE:
++        mode = authHeader ? OPEN_MODE_HTTP_DELETE_H : OPEN_MODE_HTTP_DELETE;
++        break;
++    default:
++        return memErrInvalidParam;
++    }
++
++    rc = network_open(devicespec, mode, OPEN_TRANS_NONE);
++    if (rc != FN_ERR_OK) {
++        return (Err)(1000 + rc);
++    }
++
++    if (authHeader) {
++        rc = network_http_start_add_headers(devicespec);
++        if (rc == FN_ERR_OK) {
++            /* Same as the network_http_add_header() macro, but with StrLen
++             * instead of libc strlen (this file avoids string.h). */
++            rc = network_write(devicespec, authHeader, (uint16_t)StrLen(authHeader));
++        }
++        if (rc == FN_ERR_OK) {
++            rc = network_http_end_add_headers(devicespec);
++        }
++        if (rc != FN_ERR_OK) {
++            network_close(devicespec);
++            return (Err)(1000 + rc);
++        }
++    }
++
++    if (method == FNAPP_POST && bodyLen > 0) {
++        /* network_http_post_bin: POST_SET_DATA mode, write (chunked to
++         * FujiBus frames by the bus layer), back to BODY mode. Binary-safe,
++         * unlike network_http_post which uses strlen. */
++        rc = (FN_ERR)network_http_post_bin(devicespec, body, bodyLen);
++        if (rc != FN_ERR_OK) {
++            network_close(devicespec);
++            return (Err)(1000 + rc);
++        }
++    }
++
++    return fnapp_read_all_and_close(devicespec, outH, outLen, cap);
++}
++
+ /* ------------------------------------------------------------------ */
+ /* Decimal-string parsing                                              */
+ /* ------------------------------------------------------------------ */
+diff --git a/palm/apps/common/fnapp.h b/palm/apps/common/fnapp.h
+index 29ed755..4cbd488 100644
+--- a/palm/apps/common/fnapp.h
++++ b/palm/apps/common/fnapp.h
+@@ -82,6 +82,32 @@ Int16 fnapp_json_query(const char *devicespec, const char *path, char *buf, UInt
+  * unspecified on failure). */
+ Err fnapp_http_get_all(const char *devicespec, MemHandle *outH, UInt32 *outLen, UInt32 cap);
+ 
++/* ------------------------------------------------------------------ */
++/* Authenticated request: like fnapp_http_get_all (same outH, outLen and cap
++ * contract, NUL at outH[*outLen], binary-safe, always closes devicespec,
++ * 1000 + FN_ERR on a library failure), plus a method, an optional header
++ * and, for POST, a binary body.
++ *
++ *   method       FNAPP_GET, FNAPP_POST or FNAPP_DELETE.
++ *   authHeader   one full header line WITHOUT a trailing CR/LF, e.g.
++ *                "Authorization: Bearer abc", or NULL for none. The colon
++ *                MUST be followed by exactly one space: the firmware takes
++ *                the value as everything from two bytes after the colon.
++ *                GET/DELETE open with the _H modes only when this is set.
++ *   body/bodyLen POST body (any bytes, 0x00 included; up to 65535).
++ *                Ignored for GET/DELETE.
++ *
++ * A non-2xx reply (the server's HTTP 401 "err auth\n") is NOT an error
++ * here: its body is returned like any other and the caller parses it.
++ * See docs/scribble.md "FujiNet HTTP call order (Palm)". */
++#define FNAPP_GET    0
++#define FNAPP_POST   1
++#define FNAPP_DELETE 2
++
++Err fnapp_http_request(const char *devicespec, UInt8 method, const char *authHeader,
++                       const UInt8 *body, UInt16 bodyLen,
++                       MemHandle *outH, UInt32 *outLen, UInt32 cap);
++
+ /* ------------------------------------------------------------------ */
+ /* Decimal-string parsing -- this target has NO floating point, so numeric
+  * JSON fields that look like "-48.2919" must be split by hand. */
