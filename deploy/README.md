@@ -1,6 +1,6 @@
 # Deploying Scribble
 
-Scribble runs as one Docker container behind nginx, managed by systemd.
+Scribble runs as one Docker (or podman) container behind nginx, managed by systemd.
 The container listens on `127.0.0.1:8000` only; nginx terminates TLS.
 
 **Security note (forwarded headers).** The container runs uvicorn with
@@ -16,11 +16,8 @@ a public address, or clients could spoof their IP. The nginx config likewise
 
        docker build -t scribble:latest server/
 
-   Podman hosts (`docker` is a podman shim, no `docker.service`): the unit
-   works unchanged, but image names must be fully qualified. Either pull
-   `docker.io/<user>/<image>:<tag>` and use that name in `ExecStart`, or add
-   `unqualified-search-registries = ["docker.io"]` to
-   `/etc/containers/registries.conf`.
+   Using a pre-built registry image instead? Set it in `ExecStart` (see
+   "Podman hosts" below for name rules).
 
 2. Create the data directory, owned by the container user (UID/GID 10001):
 
@@ -54,6 +51,48 @@ a public address, or clients could spoof their IP. The nginx config likewise
    redirects HTTP to HTTPS, limits bodies to 16k and rate-limits
    `/palm/v1/login`, `/api/login`, `/api/signup`. (Syntax-checked with
    nginx 1.28 using a throwaway self-signed certificate.)
+
+## Podman hosts
+
+Some distros alias `docker` to podman (`podman-docker`; there is then no
+`docker.service`). The unit works unchanged, with these differences, all hit
+on a real Debian + podman 5 / netavark host:
+
+- **Fully qualified image names.** Podman has no default registry, so
+  `docker pull user/image:tag` fails ("short-name ... did not resolve").
+  Use `docker.io/<user>/<image>:<tag>` in `ExecStart` and for pulls, or put
+  `unqualified-search-registries = ["docker.io"]` in
+  `/etc/containers/registries.conf`. `docker login` also needs the registry:
+  `docker login docker.io`. (`touch /etc/containers/nodocker` silences the
+  "Emulate Docker CLI" notice.)
+- **No systemd sandboxing in the unit.** `PrivateTmp`, `ProtectHome`,
+  `ProtectControlGroups` and friends give the service a private mount
+  namespace. Podman then cannot create the container cgroup ("create directory
+  .../libpod-*.scope/container: No such file or directory") and its network
+  namespace mount is invisible to the host ("unknown FS magic" from
+  `podman port`). The shipped unit therefore has none; the container is the
+  sandbox. Do not add them back.
+- **Stale port-forward rules.** If the service crashed or was restarted while
+  broken, netavark can leave old DNAT rules for `127.0.0.1:8000` pointing at
+  dead container IPs. The first matching rule wins, so `curl
+  http://127.0.0.1:8000` fails with "No route to host" even though the
+  container is healthy. Look with `sudo iptables -t nat -S | grep 8000`: there
+  should be exactly one DNAT target for port 8000. Stop the service,
+  `podman rm -f scribble`, delete the stale rules with `iptables -t nat -D` (the
+  same line with `-D` instead of `-A`; leave other containers' rules alone), then start
+  the service. Rebooting also clears them.
+- **`route_localnet`.** Publishing on `127.0.0.1` relies on kernel DNAT of
+  localhost traffic; some hosts need `net.ipv4.conf.all.route_localnet=1`.
+  That setting also lets other machines on the same network segment reach
+  localhost-only services on this host, so prefer limiting it to the podman
+  bridge (`net.ipv4.conf.podman0.route_localnet=1`) and test whether you need
+  it at all. Not confirmed necessary on the reference host.
+
+## nginx on older distros
+
+`http2 on;` needs nginx 1.25.1 or newer (Debian 12 has 1.22). The shipped
+config uses `listen 443 ssl http2;`, which works everywhere (newer nginx only
+logs a deprecation warning).
 
 ## First invite and user management
 
