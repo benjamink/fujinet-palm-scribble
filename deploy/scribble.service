@@ -18,15 +18,11 @@ ExecStart=/usr/bin/docker run --rm --name scribble -p 127.0.0.1:8000:8000 -v /va
 ExecStop=/usr/bin/docker stop scribble
 TimeoutStopSec=30
 
-# Hardening that does not interfere with the container runtime. Do NOT add
-# ProtectControlGroups=yes: it makes /sys/fs/cgroup read-only, and podman/crun
-# then cannot create the container's cgroup ("create directory .../libpod-*.scope").
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectHome=yes
-ProtectKernelModules=yes
-RestrictRealtime=yes
-LockPersonality=yes
+# No systemd sandboxing (PrivateTmp, ProtectHome, ProtectControlGroups, ...):
+# it gives the service its own mount namespace, which breaks podman (network
+# namespace mounts and cgroup creation become invisible/read-only, giving
+# "unknown FS magic" and "No route to host" on the published port). The
+# container itself is the sandbox.
 
 [Install]
 WantedBy=multi-user.target
